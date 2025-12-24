@@ -44,7 +44,7 @@ class KeyPointTopDownCOCOEval(object):
                  iou_type='keypoints',
                  in_vis_thre=0.2,
                  oks_thre=0.9,
-                 save_prediction_only=False):
+                 save_prediction_only=False, sigmas=None):
         super(KeyPointTopDownCOCOEval, self).__init__()
         self.coco = COCO(anno_file)
         self.num_samples = num_samples
@@ -55,6 +55,19 @@ class KeyPointTopDownCOCOEval(object):
         self.output_eval = output_eval
         self.res_file = os.path.join(output_eval, "keypoints_results.json")
         self.save_prediction_only = save_prediction_only
+        # 设置 sigmas
+        if sigmas is None:
+            if num_joints == 17:  # COCO
+                self.sigmas = np.array([
+                    0.026, 0.025, 0.025, 0.035, 0.035,
+                    0.079, 0.079, 0.072, 0.072, 0.062,
+                    0.062, 0.107, 0.107, 0.087, 0.087,
+                    0.089, 0.089
+                ])
+            else:  # 自定义数据集
+                self.sigmas = np.array([0.025] * num_joints)
+        else:
+            self.sigmas = np.array(sigmas)
         self.reset()
 
     def reset(self):
@@ -181,7 +194,7 @@ class KeyPointTopDownCOCOEval(object):
                 n_p['score'] = kpt_score * box_score
 
             keep = oks_nms([img_kpts[i] for i in range(len(img_kpts))],
-                           oks_thre)
+                           oks_thre, self.sigmas)
 
             if len(keep) == 0:
                 oks_nmsed_kpts.append(img_kpts)
@@ -199,8 +212,27 @@ class KeyPointTopDownCOCOEval(object):
                         'and do not evaluate the mAP.')
             return
         coco_dt = self.coco.loadRes(self.res_file)
+
+        # add number of keypoints to annotations
+        for ann_id in self.coco.anns:
+            ann = self.coco.anns[ann_id]
+            if 'num_keypoints' not in ann:
+                keypoints = ann.get('keypoints', [])
+                if len(keypoints) > 0:
+                    # 计算可见关键点数量
+                    num_visible = sum(1 for i in range(2, len(keypoints), 3)
+                                      if keypoints[i] > 0)
+                    ann['num_keypoints'] = num_visible
+                else:
+                    ann['num_keypoints'] = 0
+            if 'ignore' not in ann:
+                ann['ignore'] = 0
+
         coco_eval = COCOeval(self.coco, coco_dt, 'keypoints')
         coco_eval.params.useSegm = None
+
+        coco_eval.params.kpt_oks_sigmas = self.sigmas
+
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
