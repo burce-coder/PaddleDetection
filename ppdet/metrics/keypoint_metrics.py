@@ -65,7 +65,9 @@ class KeyPointTopDownCOCOEval(object):
                     0.089, 0.089
                 ])
             else:  # 自定义数据集
-                self.sigmas = np.array([0.025] * num_joints)
+                self.sigmas = np.array([
+                    0.18, 0.20, 0.23, 0.26, 0.30, 0.35, 0.42, 0.50, 0.60, 0.80
+                ], dtype=np.float32) / 10.0
         else:
             self.sigmas = np.array(sigmas)
         self.reset()
